@@ -3,14 +3,23 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>LJA Intercom — Admin console</title>
+<title>Landow Intercom — Admin console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/style.css" />
 </head>
 <body>
 
 <header class="app-header">
-  <h1>LJA Intercom — Admin console</h1>
-  <span id="clock" style="font-size:13px;color:#cfd6e4;"></span>
+  <div class="brand">
+    <img src="/shared/img/lion-mark.png" alt="Landow Jewish Academy" class="brand-mark" />
+    <div class="brand-text">
+      <div class="brand-word">Landow Intercom</div>
+      <div class="brand-sub">Admin console</div>
+    </div>
+  </div>
+  <span id="clock" style="font-size:13px;color:#cfcfe6;"></span>
 </header>
 <div class="gold-bar"></div>
 
@@ -36,7 +45,10 @@
     <div class="label" id="call-bar-label">—</div>
     <div class="sub" id="call-bar-sub">—</div>
   </div>
-  <button class="btn end" onclick="endCurrentCall()">End</button>
+  <div style="display:flex;gap:10px;">
+    <button class="btn reply" id="admin-mute-btn" onclick="toggleAdminMute()">Mute</button>
+    <button class="btn end" onclick="endCurrentCall()">End</button>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -50,6 +62,7 @@ let currentCall = null;      // { type, target, livekitRoomName, room, callLogId
 let pendingReply = null;     // payload of the reply currently shown in the incoming banner
 let adminInboxChannel = null;
 let presenceState = {};      // room_number -> true if online
+let adminMuted = false;
 
 document.getElementById("clock").textContent = new Date().toLocaleString();
 
@@ -143,42 +156,56 @@ function declineReplyBtn() {
 async function callRoom(roomNumber) {
   if (currentCall) return alert("End the current call first.");
   const livekitRoomName = `individual-${roomNumber}-${Date.now()}`;
-  const callLogId = await logCallStart("individual", roomNumber, "admin", livekitRoomName);
-
   const channel = supabaseClient.channel(`call:room:${roomNumber}`);
-  channel.on("broadcast", { event: "answered" }, () => updateCallBar(`Live — Room ${roomNumber}`, "Two-way call in progress"));
-  channel.on("broadcast", { event: "declined" }, () => { alert(`Room ${roomNumber} declined the call.`); endCurrentCall(true); });
-  channel.on("broadcast", { event: "hangup" }, () => endCurrentCall(true));
-  await channel.subscribe();
-  await channel.send({ type: "broadcast", event: "ring", payload: { livekit_room: livekitRoomName, from: "admin" } });
+  try {
+    const callLogId = await logCallStart("individual", roomNumber, "admin", livekitRoomName);
+    channel.on("broadcast", { event: "answered" }, () => updateCallBar(`Live — Room ${roomNumber}`, "Two-way call in progress"));
+    channel.on("broadcast", { event: "declined" }, () => { alert(`Room ${roomNumber} declined the call.`); endCurrentCall(true); });
+    channel.on("broadcast", { event: "hangup" }, () => endCurrentCall(true));
+    await channel.subscribe();
+    await channel.send({ type: "broadcast", event: "ring", payload: { livekit_room: livekitRoomName, from: "admin" } });
 
-  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: true });
-  currentCall = { type: "individual", target: roomNumber, livekitRoomName, room, callLogId, channel };
-  showCallBar(`Calling room ${roomNumber}…`, "Ringing — waiting for answer");
+    const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: true });
+    currentCall = { type: "individual", target: roomNumber, livekitRoomName, room, callLogId, channel };
+    showCallBar(`Calling room ${roomNumber}…`, "Connecting — audio opens automatically");
+  } catch (err) {
+    alert(`Couldn't start the call to room ${roomNumber}: ${err.message}`);
+    channel.unsubscribe();
+  }
 }
 
 async function callFloor(floor) {
   if (currentCall) return alert("End the current call first.");
   const livekitRoomName = `floor-${floor}-${Date.now()}`;
-  const callLogId = await logCallStart("floor", floor, "admin", livekitRoomName);
   const channel = supabaseClient.channel(`call:floor:${floor}`);
-  await channel.subscribe();
-  await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
-  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
-  currentCall = { type: "floor", target: floor, livekitRoomName, room, callLogId, channel };
-  showCallBar(`Paging floor ${floor}`, "One-way — everyone on this floor can hear you");
+  try {
+    const callLogId = await logCallStart("floor", floor, "admin", livekitRoomName);
+    await channel.subscribe();
+    await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
+    const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
+    currentCall = { type: "floor", target: floor, livekitRoomName, room, callLogId, channel };
+    showCallBar(`Paging floor ${floor}`, "One-way — everyone on this floor can hear you");
+  } catch (err) {
+    alert(`Couldn't start the floor page: ${err.message}`);
+    channel.unsubscribe();
+  }
 }
 
 async function callAllSchool() {
   if (currentCall) return alert("End the current call first.");
   const livekitRoomName = `all-school-${Date.now()}`;
-  const callLogId = await logCallStart("all_school", "all", "admin", livekitRoomName);
   const channel = supabaseClient.channel("call:all");
-  await channel.subscribe();
-  await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
-  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
-  currentCall = { type: "all_school", target: "all", livekitRoomName, room, callLogId, channel };
-  showCallBar("Paging whole school", "One-way — every room can hear you");
+  try {
+    const callLogId = await logCallStart("all_school", "all", "admin", livekitRoomName);
+    await channel.subscribe();
+    await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
+    const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
+    currentCall = { type: "all_school", target: "all", livekitRoomName, room, callLogId, channel };
+    showCallBar("Paging whole school", "One-way — every room can hear you");
+  } catch (err) {
+    alert(`Couldn't start the school-wide page: ${err.message}`);
+    channel.unsubscribe();
+  }
 }
 
 async function endCurrentCall(remoteInitiated) {
@@ -195,12 +222,24 @@ async function endCurrentCall(remoteInitiated) {
   hideCallBar();
 }
 
+async function toggleAdminMute() {
+  if (!currentCall) return;
+  adminMuted = !adminMuted;
+  await currentCall.room.localParticipant.setMicrophoneEnabled(!adminMuted);
+  document.getElementById("admin-mute-btn").textContent = adminMuted ? "Unmute" : "Mute";
+}
+
 function showCallBar(label, sub) {
+  adminMuted = false;
+  document.getElementById("admin-mute-btn").textContent = "Mute";
   document.getElementById("call-bar-label").textContent = label;
   document.getElementById("call-bar-sub").textContent = sub;
   document.getElementById("call-bar").style.display = "flex";
 }
-function updateCallBar(label, sub) { showCallBar(label, sub); }
+function updateCallBar(label, sub) {
+  document.getElementById("call-bar-label").textContent = label;
+  document.getElementById("call-bar-sub").textContent = sub;
+}
 function hideCallBar() { document.getElementById("call-bar").style.display = "none"; }
 
 init();

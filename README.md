@@ -13,6 +13,12 @@ public/room/                 the receiver page each classroom tablet loads
 public/shared/               config, styling, and the call-routing logic
 ```
 
+## About individual room calls
+
+Individual room calls are **fully automatic, two-way, both directions** — when the office clicks a room, that room's microphone and speaker both go live immediately, with no tap or answer step on the classroom side. This was a deliberate choice (confirmed explicitly), not a default: the alternative — audio auto-plays in, but the room's mic stays off until someone there chooses to talk back — was also built and considered, since a mic that opens automatically with zero action from the teacher is closer to a monitoring feature than a paging one. If this behavior is ever questioned by a teacher or parent, that's the tradeoff: the office can hear into a room the instant they click it. The room screen always shows a visible "on call" state while this is happening, so it's never silent or hidden — but there's no way for the room to decline a call before it connects.
+
+Floor and whole-school pages remain one-way (room mics stay off), with an optional "Reply privately" button that opens a normal two-way call back to the office — that part hasn't changed.
+
 ## About the room list
 
 I pulled every room number that actually shows up in the 2026-2027
