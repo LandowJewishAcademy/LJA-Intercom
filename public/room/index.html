@@ -8,7 +8,13 @@
 </head>
 <body>
 
-<div id="screen" class="room-screen">
+<div id="unlock-screen" class="room-screen">
+  <div class="state-title">Tap to activate</div>
+  <div class="state-sub">One-time tap so this tablet can play calls and announcements automatically</div>
+  <div class="room-actions"><button class="big-btn answer" onclick="unlockAndInit()">Tap to start</button></div>
+</div>
+
+<div id="screen" class="room-screen" style="display:none;">
   <div class="room-label" id="room-label">Loading…</div>
   <div class="state-title" id="state-title">—</div>
   <div class="state-sub" id="state-sub">—</div>
@@ -16,7 +22,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/shared/config.js"></script>
 <script src="/shared/intercom.js"></script>
 <script>
@@ -152,7 +158,11 @@ function setState(state, title, sub) {
   }
 }
 
-init();
+function unlockAndInit() {
+  document.getElementById("unlock-screen").style.display = "none";
+  document.getElementById("screen").style.display = "flex";
+  init();
+}
 </script>
 </body>
 </html>
