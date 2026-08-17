@@ -81,6 +81,19 @@ Edit `supabase/schema.sql` directly to add/remove rows, then re-run it.
   students/staff can't back out to the home screen.
 - Keep each tablet plugged in permanently — this is meant to run 24/7.
 
+## Password-protecting the admin console
+
+`/admin/*` requires a username and password (browser's native login prompt);
+`/room/*` is completely untouched, so tablets never see a prompt.
+
+In Netlify → Site settings → Environment variables, add:
+- `ADMIN_PASSWORD` — required, pick something real.
+- `ADMIN_USER` — optional, defaults to `admin`.
+
+Redeploy after adding these — like the LiveKit variables, they only take
+effect on the next build. Anyone hitting `/admin/` without the right
+credentials gets a browser login prompt instead of the console.
+
 ## Known v1 limitations (worth knowing, easy to extend later)
 
 - **One call at a time, system-wide.** The admin console doesn't support
@@ -88,10 +101,10 @@ Edit `supabase/schema.sql` directly to add/remove rows, then re-run it.
   this mirrors how a real intercom handset works, but if two staff members
   need to page simultaneously from different devices, this needs a queueing
   layer.
-- **No admin login yet** — `/admin/` is reachable by anyone with the URL.
-  Fine on a private school network; if you want a real gate, easiest fix is
-  Netlify's built-in password protection on the `/admin/*` path, or a proper
-  Supabase Auth login screen later.
+- **Admin login is HTTP Basic Auth, not per-user accounts.** Everyone with
+  the password shares one login — fine for a small office, but there's no
+  way to tell which staff member started a given call. A proper Supabase
+  Auth login screen would fix that later if it matters.
 - **Reply routing is simplified** — if two rooms reply privately at the
   exact same moment, the second ring is dropped rather than queued. Unlikely
   in practice, but worth knowing.
