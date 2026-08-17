@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Landow Intercom — Room status</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <img src="/shared/img/lion-mark.png" alt="Landow Jewish Academy" class="brand-mark" />
+    <div class="brand-text">
+      <div class="brand-word">Landow Intercom</div>
+      <div class="brand-sub">Room status</div>
+    </div>
+  </div>
+  <a href="/admin/" class="back-link">&larr; Back to console</a>
+</header>
+<div class="gold-bar"></div>
+
+<main>
+  <div class="status-summary" id="status-summary">Loading…</div>
+
+  <div class="status-columns">
+    <section class="status-col">
+      <h2 class="status-col-title online">Online now <span id="online-count"></span></h2>
+      <div class="status-list" id="online-list"></div>
+    </section>
+    <section class="status-col">
+      <h2 class="status-col-title offline">Offline <span id="offline-count"></span></h2>
+      <div class="status-list" id="offline-list"></div>
+    </section>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/shared/config.js"></script>
+<script src="/shared/intercom.js"></script>
+<script>
+let allRooms = [];
+let onlineSet = new Set();
+
+async function init() {
+  const { data: rooms, error } = await supabaseClient.from("rooms").select("*").order("floor").order("room_number");
+  if (error) {
+    document.getElementById("status-summary").textContent = "Failed to load rooms: " + error.message;
+    return;
+  }
+  allRooms = rooms;
+  render();
+  setupPresence();
+}
+
+function setupPresence() {
+  const presenceChannel = supabaseClient.channel("presence:rooms");
+  presenceChannel.on("presence", { event: "sync" }, () => {
+    const state = presenceChannel.presenceState();
+    onlineSet = new Set(Object.keys(state));
+    render();
+  });
+  presenceChannel.subscribe();
+}
+
+function roomCard(room) {
+  const teachers = (room.teachers || []).join(", ");
+  return `
+    <div class="status-card">
+      <div class="status-card-room">${room.display_name}</div>
+      ${teachers ? `<div class="status-card-teacher">${teachers}</div>` : ""}
+    </div>`;
+}
+
+function render() {
+  const online = allRooms.filter((r) => onlineSet.has(r.room_number));
+  const offline = allRooms.filter((r) => !onlineSet.has(r.room_number));
+
+  document.getElementById("status-summary").textContent = `${online.length} of ${allRooms.length} rooms online`;
+  document.getElementById("online-count").textContent = `(${online.length})`;
+  document.getElementById("offline-count").textContent = `(${offline.length})`;
+
+  document.getElementById("online-list").innerHTML =
+    online.map(roomCard).join("") || `<div class="status-empty">No rooms online right now</div>`;
+  document.getElementById("offline-list").innerHTML =
+    offline.map(roomCard).join("") || `<div class="status-empty">Every room is online</div>`;
+}
+
+init();
+</script>
+</body>
+</html>
