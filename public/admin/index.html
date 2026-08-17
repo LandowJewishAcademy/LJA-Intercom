@@ -37,6 +37,11 @@
 
   <button class="all-call-btn" onclick="callAllSchool()">Page whole school</button>
 
+  <div class="teacher-search-wrap">
+    <input type="text" id="teacher-search" placeholder="Search by teacher name…" oninput="filterByTeacher(this.value)" />
+    <span id="teacher-search-count" class="teacher-search-count"></span>
+  </div>
+
   <div id="floors"></div>
 </main>
 
@@ -77,6 +82,33 @@ async function init() {
   setupAdminInbox();
 }
 
+function filterByTeacher(query) {
+  const q = query.trim().toLowerCase();
+  const tiles = document.querySelectorAll(".room-btn");
+  const countEl = document.getElementById("teacher-search-count");
+
+  if (!q) {
+    tiles.forEach((t) => t.classList.remove("dim", "match"));
+    countEl.textContent = "";
+    return;
+  }
+
+  let matchCount = 0;
+  let firstMatch = null;
+  tiles.forEach((t) => {
+    const isMatch = t.dataset.search.includes(q);
+    t.classList.toggle("match", isMatch);
+    t.classList.toggle("dim", !isMatch);
+    if (isMatch) {
+      matchCount++;
+      if (!firstMatch) firstMatch = t;
+    }
+  });
+
+  countEl.textContent = matchCount === 0 ? "No matches" : `${matchCount} match${matchCount === 1 ? "" : "es"}`;
+  if (firstMatch) firstMatch.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 function renderFloors(rooms) {
   const byFloor = {};
   for (const r of rooms) (byFloor[r.floor] = byFloor[r.floor] || []).push(r);
@@ -96,10 +128,16 @@ function renderFloors(rooms) {
 
     const grid = section.querySelector(`#grid-floor-${floor}`);
     for (const room of byFloor[floor]) {
+      const teachers = room.teachers || [];
+      const teacherLine = teachers.length
+        ? `<div class="teacher-line${room.teachers_shared ? " shared" : ""}">${teachers.join(", ")}</div>`
+        : "";
       const btn = document.createElement("button");
       btn.className = "room-btn";
       btn.id = `room-btn-${room.room_number}`;
-      btn.innerHTML = `${room.display_name}<span class="status-dot" id="dot-${room.room_number}"></span>`;
+      btn.dataset.teachers = teachers.join(", ").toLowerCase();
+      btn.dataset.search = `${room.room_number} ${room.display_name} ${teachers.join(" ")}`.toLowerCase();
+      btn.innerHTML = `${room.display_name}<span class="status-dot" id="dot-${room.room_number}"></span>${teacherLine}`;
       btn.onclick = () => callRoom(room.room_number);
       grid.appendChild(btn);
     }
