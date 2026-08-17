@@ -1,0 +1,220 @@
+:root {
+  --navy: #1b2a4a;
+  --navy-dark: #101b30;
+  --gold: #c9a227;
+  --bg: #f6f5f2;
+  --card: #ffffff;
+  --border: #dcd9d0;
+  --text: #22262e;
+  --text-muted: #6b7078;
+  --danger: #b23a3a;
+  --success: #2f7a4d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header.app-header {
+  background: var(--navy);
+  color: #fff;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+header.app-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+header.app-header .gold-bar {
+  height: 3px;
+  background: var(--gold);
+}
+
+main {
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.floor-section {
+  margin-bottom: 28px;
+}
+
+.floor-section h2 {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.floor-call-btn {
+  background: var(--card);
+  border: 1px solid var(--gold);
+  color: var(--navy);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.floor-call-btn:hover { background: #fdf8ec; }
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.room-btn {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 12px;
+  min-height: 72px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.room-btn:hover { border-color: var(--navy); }
+
+.room-btn .status-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.room-btn .status-dot.online { background: var(--success); }
+
+.all-call-btn {
+  display: block;
+  width: 100%;
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 18px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  margin-bottom: 28px;
+}
+
+.all-call-btn:hover { background: var(--navy-dark); }
+
+.call-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--navy);
+  color: #fff;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 10px 10px 0 0;
+  margin-top: 16px;
+}
+
+.call-bar .label { font-weight: 600; }
+.call-bar .sub { color: #cfd6e4; font-size: 13px; }
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn.end { background: var(--danger); color: #fff; }
+.btn.answer { background: var(--success); color: #fff; }
+.btn.decline { background: var(--danger); color: #fff; }
+.btn.reply { background: var(--gold); color: var(--navy-dark); }
+
+.incoming-banner {
+  background: #fff7e0;
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+/* Room receiver — full screen state display */
+.room-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.room-screen .room-label {
+  font-size: 15px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.room-screen .state-title {
+  font-size: 42px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 12px;
+}
+
+.room-screen .state-sub {
+  font-size: 18px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+.room-screen.state-ringing { background: #fff7e0; }
+.room-screen.state-live { background: #eaf5ee; }
+.room-screen.state-broadcast { background: #eef1fa; }
+
+.room-actions { display: flex; gap: 16px; }
+
+.big-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 22px 44px;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.big-btn.answer { background: var(--success); color: #fff; }
+.big-btn.decline { background: var(--danger); color: #fff; }
+.big-btn.end { background: var(--danger); color: #fff; }
+.big-btn.reply { background: var(--gold); color: var(--navy-dark); }

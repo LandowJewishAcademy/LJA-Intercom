@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LJA Intercom — Admin console</title>
+<link rel="stylesheet" href="/shared/style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <h1>LJA Intercom — Admin console</h1>
+  <span id="clock" style="font-size:13px;color:#cfd6e4;"></span>
+</header>
+<div class="gold-bar"></div>
+
+<main>
+  <div id="incoming-banner" class="incoming-banner" style="display:none;">
+    <div>
+      <strong id="incoming-text">Incoming reply</strong>
+      <div class="sub" style="color:#6b7078;">Someone wants to speak privately</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn answer" onclick="answerReply()">Answer</button>
+      <button class="btn decline" onclick="declineReplyBtn()">Decline</button>
+    </div>
+  </div>
+
+  <button class="all-call-btn" onclick="callAllSchool()">Page whole school</button>
+
+  <div id="floors"></div>
+</main>
+
+<div id="call-bar" class="call-bar" style="display:none;">
+  <div>
+    <div class="label" id="call-bar-label">—</div>
+    <div class="sub" id="call-bar-sub">—</div>
+  </div>
+  <button class="btn end" onclick="endCurrentCall()">End</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script src="/shared/config.js"></script>
+<script src="/shared/intercom.js"></script>
+<script>
+const FLOOR_LABELS = { 1: "Floor 1 — K-1st", 2: "Floor 2 — 2nd-5th", 3: "Floor 3 — Middle school", 4: "Floor 4 — High school" };
+
+let currentCall = null;      // { type, target, livekitRoomName, room, callLogId, channel }
+let pendingReply = null;     // payload of the reply currently shown in the incoming banner
+let adminInboxChannel = null;
+let presenceState = {};      // room_number -> true if online
+
+document.getElementById("clock").textContent = new Date().toLocaleString();
+
+async function init() {
+  const { data: rooms, error } = await supabaseClient.from("rooms").select("*").order("floor").order("room_number");
+  if (error) {
+    document.getElementById("floors").textContent = "Failed to load rooms: " + error.message;
+    return;
+  }
+  renderFloors(rooms);
+  setupPresence();
+  setupAdminInbox();
+}
+
+function renderFloors(rooms) {
+  const byFloor = {};
+  for (const r of rooms) (byFloor[r.floor] = byFloor[r.floor] || []).push(r);
+
+  const container = document.getElementById("floors");
+  container.innerHTML = "";
+  for (const floor of Object.keys(byFloor).sort()) {
+    const section = document.createElement("div");
+    section.className = "floor-section";
+    section.innerHTML = `
+      <h2>${FLOOR_LABELS[floor] || "Floor " + floor}
+        <button class="floor-call-btn" onclick="callFloor(${floor})">Page this floor</button>
+      </h2>
+      <div class="room-grid" id="grid-floor-${floor}"></div>
+    `;
+    container.appendChild(section);
+
+    const grid = section.querySelector(`#grid-floor-${floor}`);
+    for (const room of byFloor[floor]) {
+      const btn = document.createElement("button");
+      btn.className = "room-btn";
+      btn.id = `room-btn-${room.room_number}`;
+      btn.innerHTML = `${room.display_name}<span class="status-dot" id="dot-${room.room_number}"></span>`;
+      btn.onclick = () => callRoom(room.room_number);
+      grid.appendChild(btn);
+    }
+  }
+}
+
+function setupPresence() {
+  const presenceChannel = supabaseClient.channel("presence:rooms");
+  presenceChannel.on("presence", { event: "sync" }, () => {
+    const state = presenceChannel.presenceState();
+    presenceState = {};
+    for (const key of Object.keys(state)) presenceState[key] = true;
+    for (const key of Object.keys(presenceState)) {
+      const dot = document.getElementById(`dot-${key}`);
+      if (dot) dot.classList.add("online");
+    }
+  });
+  presenceChannel.subscribe();
+}
+
+function setupAdminInbox() {
+  adminInboxChannel = supabaseClient.channel("call:admin");
+  adminInboxChannel.on("broadcast", { event: "ring" }, ({ payload }) => showIncomingBanner(payload));
+  adminInboxChannel.subscribe();
+}
+
+function showIncomingBanner(payload) {
+  if (currentCall) return; // v1: one call at a time — ignore new rings mid-call
+  pendingReply = payload;
+  document.getElementById("incoming-text").textContent = `Room ${payload.from} wants to reply`;
+  document.getElementById("incoming-banner").style.display = "flex";
+}
+
+function hideIncomingBanner() {
+  pendingReply = null;
+  document.getElementById("incoming-banner").style.display = "none";
+}
+
+async function answerReply() {
+  const payload = pendingReply;
+  hideIncomingBanner();
+  await adminInboxChannel.send({ type: "broadcast", event: "answered", payload });
+  const room = await connectToLiveKitRoom("admin", payload.livekit_room, { canPublish: true, canSubscribe: true });
+  currentCall = { type: "individual", target: payload.from, livekitRoomName: payload.livekit_room, room, callLogId: null, channel: adminInboxChannel };
+  showCallBar(`Live — Room ${payload.from}`, "Two-way reply call");
+}
+
+function declineReplyBtn() {
+  const payload = pendingReply;
+  hideIncomingBanner();
+  adminInboxChannel.send({ type: "broadcast", event: "declined", payload });
+}
+
+async function callRoom(roomNumber) {
+  if (currentCall) return alert("End the current call first.");
+  const livekitRoomName = `individual-${roomNumber}-${Date.now()}`;
+  const callLogId = await logCallStart("individual", roomNumber, "admin", livekitRoomName);
+
+  const channel = supabaseClient.channel(`call:room:${roomNumber}`);
+  channel.on("broadcast", { event: "answered" }, () => updateCallBar(`Live — Room ${roomNumber}`, "Two-way call in progress"));
+  channel.on("broadcast", { event: "declined" }, () => { alert(`Room ${roomNumber} declined the call.`); endCurrentCall(true); });
+  channel.on("broadcast", { event: "hangup" }, () => endCurrentCall(true));
+  await channel.subscribe();
+  await channel.send({ type: "broadcast", event: "ring", payload: { livekit_room: livekitRoomName, from: "admin" } });
+
+  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: true });
+  currentCall = { type: "individual", target: roomNumber, livekitRoomName, room, callLogId, channel };
+  showCallBar(`Calling room ${roomNumber}…`, "Ringing — waiting for answer");
+}
+
+async function callFloor(floor) {
+  if (currentCall) return alert("End the current call first.");
+  const livekitRoomName = `floor-${floor}-${Date.now()}`;
+  const callLogId = await logCallStart("floor", floor, "admin", livekitRoomName);
+  const channel = supabaseClient.channel(`call:floor:${floor}`);
+  await channel.subscribe();
+  await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
+  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
+  currentCall = { type: "floor", target: floor, livekitRoomName, room, callLogId, channel };
+  showCallBar(`Paging floor ${floor}`, "One-way — everyone on this floor can hear you");
+}
+
+async function callAllSchool() {
+  if (currentCall) return alert("End the current call first.");
+  const livekitRoomName = `all-school-${Date.now()}`;
+  const callLogId = await logCallStart("all_school", "all", "admin", livekitRoomName);
+  const channel = supabaseClient.channel("call:all");
+  await channel.subscribe();
+  await channel.send({ type: "broadcast", event: "broadcast_start", payload: { livekit_room: livekitRoomName } });
+  const room = await connectToLiveKitRoom("admin", livekitRoomName, { canPublish: true, canSubscribe: false });
+  currentCall = { type: "all_school", target: "all", livekitRoomName, room, callLogId, channel };
+  showCallBar("Paging whole school", "One-way — every room can hear you");
+}
+
+async function endCurrentCall(remoteInitiated) {
+  if (!currentCall) return;
+  const { livekitRoomName, room, callLogId, channel, type } = currentCall;
+  if (!remoteInitiated) {
+    const event = type === "individual" ? "hangup" : "broadcast_end";
+    await channel.send({ type: "broadcast", event, payload: { livekit_room: livekitRoomName } });
+  }
+  await disconnectLiveKitRoom(room);
+  await logCallEnd(callLogId);
+  if (channel !== adminInboxChannel) await channel.unsubscribe();
+  currentCall = null;
+  hideCallBar();
+}
+
+function showCallBar(label, sub) {
+  document.getElementById("call-bar-label").textContent = label;
+  document.getElementById("call-bar-sub").textContent = sub;
+  document.getElementById("call-bar").style.display = "flex";
+}
+function updateCallBar(label, sub) { showCallBar(label, sub); }
+function hideCallBar() { document.getElementById("call-bar").style.display = "none"; }
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>LJA Intercom — Room</title>
+<link rel="stylesheet" href="/shared/style.css" />
+</head>
+<body>
+
+<div id="screen" class="room-screen">
+  <div class="room-label" id="room-label">Loading…</div>
+  <div class="state-title" id="state-title">—</div>
+  <div class="state-sub" id="state-sub">—</div>
+  <div class="room-actions" id="actions"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script src="/shared/config.js"></script>
+<script src="/shared/intercom.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const roomNumber = params.get("room") || location.pathname.split("/").filter(Boolean).pop();
+
+let roomInfo = null;
+let activeLiveKitRoom = null;
+let activeChannel = null;
+let currentLivekitRoomName = null;
+let pendingLivekitRoomName = null; // used while waiting for admin to answer a reply
+
+async function init() {
+  const { data, error } = await supabaseClient.from("rooms").select("*").eq("room_number", roomNumber).single();
+  if (error || !data) {
+    setState("idle", "Room not found", `No room "${roomNumber}" in the directory. Check the URL.`);
+    return;
+  }
+  roomInfo = data;
+  document.getElementById("room-label").textContent = roomInfo.display_name;
+
+  const presenceChannel = supabaseClient.channel("presence:rooms", { config: { presence: { key: roomNumber } } });
+  presenceChannel.subscribe(async (status) => {
+    if (status === "SUBSCRIBED") await presenceChannel.track({ room_number: roomNumber, floor: roomInfo.floor });
+  });
+
+  const roomChannel = supabaseClient.channel(`call:room:${roomNumber}`);
+  roomChannel.on("broadcast", { event: "ring" }, ({ payload }) => handleIncomingRing(roomChannel, payload));
+  roomChannel.on("broadcast", { event: "hangup" }, () => handleRemoteHangup());
+  await roomChannel.subscribe();
+
+  const floorChannel = supabaseClient.channel(`call:floor:${roomInfo.floor}`);
+  floorChannel.on("broadcast", { event: "broadcast_start" }, ({ payload }) => handleBroadcastStart(payload, `Floor ${roomInfo.floor} announcement`));
+  floorChannel.on("broadcast", { event: "broadcast_end" }, () => handleBroadcastEnd());
+  await floorChannel.subscribe();
+
+  const allChannel = supabaseClient.channel("call:all");
+  allChannel.on("broadcast", { event: "broadcast_start" }, ({ payload }) => handleBroadcastStart(payload, "Whole-school announcement"));
+  allChannel.on("broadcast", { event: "broadcast_end" }, () => handleBroadcastEnd());
+  await allChannel.subscribe();
+
+  setState("idle", "Ready", "Waiting for a call or announcement");
+}
+
+function handleIncomingRing(roomChannel, payload) {
+  activeChannel = roomChannel;
+  currentLivekitRoomName = payload.livekit_room;
+  setState("ringing", "Incoming call", "The office is calling this room");
+}
+
+async function answerCall() {
+  activeLiveKitRoom = await connectToLiveKitRoom(`room-${roomNumber}`, currentLivekitRoomName, { canPublish: true, canSubscribe: true });
+  await activeChannel.send({ type: "broadcast", event: "answered", payload: { livekit_room: currentLivekitRoomName } });
+  setState("live", "On call", "Two-way audio with the office");
+}
+
+async function declineCall() {
+  await activeChannel.send({ type: "broadcast", event: "declined", payload: { livekit_room: currentLivekitRoomName } });
+  resetToIdle();
+}
+
+async function endCall() {
+  await activeChannel.send({ type: "broadcast", event: "hangup", payload: { livekit_room: currentLivekitRoomName } });
+  await disconnectLiveKitRoom(activeLiveKitRoom);
+  resetToIdle();
+}
+
+async function handleRemoteHangup() {
+  await disconnectLiveKitRoom(activeLiveKitRoom);
+  resetToIdle();
+}
+
+async function handleBroadcastStart(payload, label) {
+  currentLivekitRoomName = payload.livekit_room;
+  activeLiveKitRoom = await connectToLiveKitRoom(`room-${roomNumber}`, currentLivekitRoomName, { canPublish: false, canSubscribe: true });
+  setState("broadcast", label, "Listening — tap Reply to speak with the office privately");
+}
+
+async function handleBroadcastEnd() {
+  await disconnectLiveKitRoom(activeLiveKitRoom);
+  resetToIdle();
+}
+
+async function replyPrivately() {
+  const livekitRoomName = `reply-${roomNumber}-${Date.now()}`;
+  pendingLivekitRoomName = livekitRoomName;
+  const adminChannel = supabaseClient.channel("call:admin");
+  adminChannel.on("broadcast", { event: "answered" }, async ({ payload }) => {
+    if (payload.livekit_room !== livekitRoomName) return;
+    activeLiveKitRoom = await connectToLiveKitRoom(`room-${roomNumber}`, livekitRoomName, { canPublish: true, canSubscribe: true });
+    activeChannel = adminChannel;
+    currentLivekitRoomName = livekitRoomName;
+    setState("live", "On call", "Two-way reply call with the office");
+  });
+  adminChannel.on("broadcast", { event: "declined" }, ({ payload }) => {
+    if (payload.livekit_room !== livekitRoomName) return;
+    resetToIdle();
+  });
+  await adminChannel.subscribe();
+  await adminChannel.send({ type: "broadcast", event: "ring", payload: { livekit_room: livekitRoomName, from: roomNumber } });
+  setState("calling", "Calling the office…", "Waiting for someone to answer");
+}
+
+function cancelReply() {
+  resetToIdle();
+}
+
+function resetToIdle() {
+  activeLiveKitRoom = null;
+  currentLivekitRoomName = null;
+  pendingLivekitRoomName = null;
+  setState("idle", "Ready", "Waiting for a call or announcement");
+}
+
+function setState(state, title, sub) {
+  const screen = document.getElementById("screen");
+  screen.className = "room-screen state-" + state;
+  document.getElementById("state-title").textContent = title;
+  document.getElementById("state-sub").textContent = sub;
+
+  const actions = document.getElementById("actions");
+  actions.innerHTML = "";
+  if (state === "ringing") {
+    actions.innerHTML = `
+      <button class="big-btn answer" onclick="answerCall()">Answer</button>
+      <button class="big-btn decline" onclick="declineCall()">Decline</button>`;
+  } else if (state === "live") {
+    actions.innerHTML = `<button class="big-btn end" onclick="endCall()">End call</button>`;
+  } else if (state === "broadcast") {
+    actions.innerHTML = `<button class="big-btn reply" onclick="replyPrivately()">Reply privately</button>`;
+  } else if (state === "calling") {
+    actions.innerHTML = `<button class="big-btn decline" onclick="cancelReply()">Cancel</button>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
